@@ -90,11 +90,10 @@ Point-Cache is totally *training-free* and can operate in comparable efficiency 
 ## Acknowledgement
 Our implementation is partially inspired by the following projects, thanks to their great work.
 
-1. [Dassl](https://github.com/KaiyangZhou/Dassl.pytorch)
-2. [ULIP](https://github.com/salesforce/ULIP)
-3. [OpenShape](https://github.com/ZrrSkywalker/PointCLIP)
-4. [Uni3D](https://github.com/yangyangyang127/PointCLIP_V2)
-5. [TDA](https://github.com/kdiAAA/TDA)
+1. [ULIP](https://github.com/salesforce/ULIP)
+2. [OpenShape](https://github.com/ZrrSkywalker/PointCLIP)
+3. [Uni3D](https://github.com/yangyangyang127/PointCLIP_V2)
+4. [TDA](https://github.com/kdiAAA/TDA)
 
 ## Contact
 If you have any question about our work, please search related issues or create a new one in this repository.
