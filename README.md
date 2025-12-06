@@ -49,17 +49,26 @@ conda env create -f env.yaml
 
 
 ### Pre-trained Weights
-1. We use the following models as baselines, and their pre-trained weights can be obtained from their public GitHub repositories.
-    * [ULIP-2](https://huggingface.co/datasets/auniquesun/Point-PRC/tree/main/pretrained-weights/ulip-2)
-    * [OpenShape](https://github.com/Colin97/OpenShape_code/)
-    * [Uni3D](https://github.com/baaivision/Uni3D)
 
-    - **NOTE:** 
-        1. ULIP-2 uses the same [text encoder](https://huggingface.co/datasets/auniquesun/Point-PRC/tree/main/pretrained-weights/ulip/image-text-encoder) 
-        2. For OpenShape, we use the [pointbert-vitg14-rgb](https://huggingface.co/OpenShape/openshape-pointbert-vitg14-rgb/tree/main) version
-            - For text encoder in OpenShape, we use [CLIP-ViT-bigG-14-laion2B-39B-b160k](https://huggingface.co/laion/CLIP-ViT-bigG-14-laion2B-39B-b160k) 
-        3. For Uni3D, we use the [uni3d-L](https://huggingface.co/BAAI/Uni3D/tree/main/modelzoo/uni3d-L) version
-            - For text encoder in Uni3D, we use [eva02_enormous_patch14_plus_clip_224.laion2b_s9b_b144k](https://huggingface.co/timm/eva02_enormous_patch14_plus_clip_224.laion2b_s9b_b144k) 
+We use the following models as baselines. Their pre-trained weights can be obtained from the respective public repositories:
+
+* [ULIP-2](https://huggingface.co/datasets/auniquesun/Point-PRC/tree/main/pretrained-weights/ulip-2)  
+* [OpenShape](https://github.com/Colin97/OpenShape_code/)  
+* [Uni3D](https://github.com/baaivision/Uni3D)  
+
+**Details on the models and text encoders used:**
+
+1. **ULIP-2**  
+   - Model: Use the same [text encoder](https://huggingface.co/datasets/auniquesun/Point-PRC/tree/main/pretrained-weights/ulip/image-text-encoder).  
+
+2. **OpenShape**  
+   - Model: [pointbert-vitg14-rgb](https://huggingface.co/OpenShape/openshape-pointbert-vitg14-rgb/tree/main)  
+   - Text Encoder: [CLIP-ViT-bigG-14-laion2B-39B-b160k](https://huggingface.co/laion/CLIP-ViT-bigG-14-laion2B-39B-b160k)  
+
+3. **Uni3D**  
+   - Model: [uni3d-L](https://huggingface.co/BAAI/Uni3D/tree/main/modelzoo/uni3d-L)  
+   - Text Encoder: [eva02_enormous_patch14_plus_clip_224.laion2b_s9b_b144k](https://huggingface.co/timm/eva02_enormous_patch14_plus_clip_224.laion2b_s9b_b144k)
+
 
 
 ### Datasets
