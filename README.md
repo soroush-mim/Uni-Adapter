@@ -13,7 +13,7 @@ Please stay tuned — the full implementation will be made available **soon**.
 
 ## Motivation
 
-
+Existing test-time adaptation methods either depend on computationally expensive parameter updates or rely on high-confidence samples that fail to capture the full diversity of 3D structures. To address these limitations, this work introduces a training-free, prototype-based adaptation framework designed to enhance reliability and stability under challenging and heterogeneous test conditions.
 
 ## Environment
 
