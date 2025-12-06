@@ -30,8 +30,8 @@ Please stay tuned — the full implementation will be made available **soon**.
 ```sh
   # NOTE The option 1 is recommended. A complete package list is provided in `env.yaml`
   # option 1: create conda virtual env by your own
-  conda create -n pointcache python=3.8.16
-  codna activate pointcache
+  conda create -n uniadapter python=3.8.16
+  codna activate uniadapter
   # install torch
   pip install torch==1.12.0+cu116 torchvision==0.13.0+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
   # install dassl
@@ -41,7 +41,6 @@ Please stay tuned — the full implementation will be made available **soon**.
 
   # option 2: create conda virtual env according to the provided env.yaml
   conda env create -f env.yaml
-  codna activate pointcache
 ```
 
 
