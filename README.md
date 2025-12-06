@@ -28,19 +28,23 @@ Please stay tuned — the full implementation will be made available **soon**.
 * pueue & pueued 2.0.4
 
 ```sh
-  # NOTE The option 1 is recommended. A complete package list is provided in `env.yaml`
-  # option 1: create conda virtual env by your own
-  conda create -n uniadapter python=3.8.16
-  codna activate uniadapter
-  # install torch
-  pip install torch==1.12.0+cu116 torchvision==0.13.0+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
-  # install dassl
-  git clone https://github.com/
-  cd dassl/
-  python setup.py develop # (no need to re-build if the source code is modified)
+# NOTE: Option 1 is recommended. A complete package list is available in `env.yaml`.
 
-  # option 2: create conda virtual env according to the provided env.yaml
-  conda env create -f env.yaml
+# Option 1: Manually create a Conda virtual environment
+conda create -n uniadapter python=3.8.16
+conda activate uniadapter
+
+# Install PyTorch
+pip install torch==1.12.0+cu116 torchvision==0.13.0+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
+
+# Install Dassl
+git clone https://github.com/...
+cd dassl/
+python setup.py develop  # No need to rebuild if the source code is modified.
+
+# Option 2: Create the Conda environment from the provided env.yaml
+conda env create -f env.yaml
+
 ```
 
 
