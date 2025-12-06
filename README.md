@@ -55,7 +55,7 @@ Please stay tuned — the full implementation will be made available **soon**.
         1. ULIP-2 uses the same [text encoder](https://huggingface.co/datasets/auniquesun/Point-PRC/tree/main/pretrained-weights/ulip/image-text-encoder) 
         2. For OpenShape, we use the [pointbert-vitg14-rgb](https://huggingface.co/OpenShape/openshape-pointbert-vitg14-rgb/tree/main) version
             - For text encoder in OpenShape, we use [CLIP-ViT-bigG-14-laion2B-39B-b160k](https://huggingface.co/laion/CLIP-ViT-bigG-14-laion2B-39B-b160k) from **huggingface laion**
-        3. For Uni3D, we use the [uni3d-g](https://huggingface.co/BAAI/Uni3D/tree/main/modelzoo/uni3d-g) version
+        3. For Uni3D, we use the [uni3d-L](https://huggingface.co/BAAI/Uni3D/tree/main/modelzoo/uni3d-L) version
             - For text encoder in Uni3D, we use [eva02_enormous_patch14_plus_clip_224.laion2b_s9b_b144k](https://huggingface.co/timm/eva02_enormous_patch14_plus_clip_224.laion2b_s9b_b144k) from **huggingface timm**
 
 2. Make a folder called `weights` under this project and save the pre-trained weights into this folder. 
@@ -63,7 +63,7 @@ Please stay tuned — the full implementation will be made available **soon**.
 ### Datasets
 1. The folder structure of used datasets should be organized as follows.
 ```sh
-    /path/to/Point-Cache
+    
     |----data # placed in the same level as `runners`, `scripts`, etc. 
         |----modelnet_c
         |----modelnet40
