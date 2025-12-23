@@ -15,7 +15,7 @@ def get_hyperparams(dataset_name):
     }
 
     if "modelnet" in dataset_name.lower():
-        params["lambda_reg"] = 0.07 # 0.11
+        params["lambda_reg"] = 0.11 # 0.07
         params["threshold"] = 0.5
 
     elif "scanobject" in dataset_name.lower():

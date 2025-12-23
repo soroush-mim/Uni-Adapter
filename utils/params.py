@@ -13,6 +13,7 @@ def parse_args():
     parser.add_argument('--templates-path', type=str, default='./data/templates.json', help='Path to templates.json')
     parser.add_argument('--labels-path', type=str, default='./data/labels.json', help='Path to labels.json')
     
+    
 
     
 
@@ -26,12 +27,12 @@ def parse_args():
     parser.add_argument('--drop-path-rate', default=0.0, type=float)
 
     # Uni3D Specifics
-    parser.add_argument('--precomputed-text-features', type=str, default=r"C:\Users\reza_moradi\Desktop\point\AAAI\code\precomputed_text_features\Uni3D\text_features_large.pt", help="Path to Uni3D checkpoint")
+    parser.add_argument('--precomputed-text-features', type=str, default=r"/home/ai-research/soroush/Uni-Adapter/precomputed_text_features/Uni3D/text_features_large.pt", help="Path to Uni3D checkpoint")
 
     parser.add_argument('--clip-uni3d-model', type=str, default="EVA02-E-14-plus", help="CLIP backbone name")
-    parser.add_argument('--clip-uvi3d-path', type=str, default=r"C:\Users\reza_moradi\Desktop\point\AAAI\code\pretrained\open_clip_pytorch_model.bin", help="CLIP backbone name")
+    parser.add_argument('--clip-uvi3d-path', type=str, default=r"/home/ai-research/soroush/model/pretrain/open_clip_pytorch_model.bin", help="CLIP backbone name")
     parser.add_argument('--pc-model-uni3d', type=str, default="eva02_large_patch14_448", help="Point cloud backbone") # for Uni3D
-    parser.add_argument('--pretrained-pc-uni3d', type=str, default=r"C:\Users\reza_moradi\Desktop\point\AAAI\code\pretrained\uni3d_L_ensembled_model.pt", help="Path to Uni3D checkpoint")
+    parser.add_argument('--pretrained-pc-uni3d', type=str, default=r"/home/ai-research/soroush/model/pretrain/uni3d_L_ensembled_model.pt", help="Path to Uni3D checkpoint")
     
     
     parser.add_argument('--pc-feat-dim-uni3d', type=int, default=1024, help="Point cloud feature dimension") # for Uni3D
@@ -72,7 +73,7 @@ def parse_args():
 
     # ========================= Data Config =========================
     # Dataset Root
-    parser.add_argument('--myroot', type=str, default="C:\\Users\\reza_moradi\\Desktop\\point\\AAAI\\code\\datasets\\modelnet40_c", help='Root path to specific dataset point clouds')
+    parser.add_argument('--myroot', type=str, default="/home/ai-research/soroush/dataset/modelnet40_c", help='Root path to specific dataset point clouds')
     
     parser.add_argument('--dataset_name', type=str, default='modelnet', help='modelnet, scanobject, shapenetcore')
     parser.add_argument('--validate_dataset_name', default='modelnet40_openshape', type=str, help="Key in labels.json")
