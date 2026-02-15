@@ -12,6 +12,7 @@ def get_hyperparams(dataset_name):
         "beta": 150,            # Confidence decay
         "threshold": 0.5,       # Graph adjacency threshold
         "lambda_reg": 0.11,     # Approx 0.1
+        "use_new_approximation": True,
     }
 
     if "modelnet" in dataset_name.lower():

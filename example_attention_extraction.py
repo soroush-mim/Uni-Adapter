@@ -42,7 +42,7 @@ from extract_attention import (
 )
 
 
-def load_sample_pair(args, sample_idx=None):
+def load_sample_pair(args, sample_idx=222):
     """
     Load the same sample in both clean and corrupted versions.
 

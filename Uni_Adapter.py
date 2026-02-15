@@ -12,6 +12,8 @@ from utils.utils import scaled_all_reduce, AverageMeter, ProgressMeter, accuracy
 import utils.math_utils as math_utils
 from visualize.visualization import visualize_pointclouds_plotly
 
+from dota import DOTA
+
 # Use math logic directly
 def softmax_entropy(x, enable_softmax=True, temperature=1.0):
     if enable_softmax:
@@ -63,7 +65,9 @@ def get_logits_wrapper(args, model, feature, clip_weights):
     
     loss = softmax_entropy(logits)
     prob_map = logits.softmax(1)
-    pred = logits.topk(1, dim=1, largest=True, sorted=True)[1].t()[0].type(torch.int32)
+    #pred = logits.topk(1, dim=1, largest=True, sorted=True)[1].t()[0].type(torch.int32)
+    pred = int(logits.topk(1, dim=1, largest=True, sorted=True)[1].t()[0].type(torch.int32))
+
     
     return pc_features, logits, loss, prob_map, pred
 
@@ -190,7 +194,15 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
 
     model.eval()
     
-
+        # DOTA Configuration
+    if args.use_dota:
+        dota_cfg = {
+            'epsilon': args.dota_epsilon,
+            'sigma': args.dota_sigma,
+            'eta': args.dota_eta,
+            'rho': args.dota_rho
+        }
+        logging.info(f"DOTA Hyperparameters: {dota_cfg}")
 
     with torch.no_grad():
         logging.info('=> Encoding text anchors')
@@ -215,11 +227,26 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
 
         text_features = text_features.to(args.device)
         
-        # --- Single Cache Initialization ---
-        cache = {} 
-        
-        L_reg_old = 0 
-        L_reg_old_inv = 0
+        # Determine input_shape for DOTA: embedding dimension of pc_features
+        # This can be obtained from the model or determined after the first forward pass.
+        # For now, let's assume it matches the text_features embedding dimension.
+        input_shape_for_dota = text_features.shape[1] if args.vlm3d == 'uni3d' else text_features.shape[0] # clip_weights.shape[0]
+
+        # Initialize DOTA model if enabled
+        dota_model = None
+        if args.use_dota:
+            num_classes_for_dota = text_features.shape[0] if args.vlm3d == 'uni3d' else text_features.shape[1] # clip_weights.shape[1]
+            tensor_matrix = torch.full((input_shape_for_dota, num_classes_for_dota), 0.001) ## WHY?
+            dota_model = DOTA(dota_cfg, input_shape_for_dota, num_classes_for_dota, tensor_matrix)
+            dota_model.eval() # DOTA is used during inference/TTA, not trained in a traditional sense.
+
+
+        # --- Uni-Adapter Cache Initialization (Only if DOTA is not used) ---
+        if not args.use_dota:
+            cache = {} 
+            L_reg_old = 0 
+            L_reg_old_inv = 0
+
         stored_times = []
 
         start_event = torch.cuda.Event(enable_timing=True)
@@ -253,38 +280,56 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
             # A. Get Base Logits
             pc_features, clip_logits, loss, prob_map, pred = get_logits_wrapper(args, model, feature, clip_weights)
             
-            prop_entropy = torch.tensor(get_entropy(loss, clip_weights), device=args.device)
+            # --- DOTA Logic ---
+            if args.use_dota and dota_model is not None:
+                # DOTA expects pc_features, prob_map as its input to fit
+                # dota_logits = dota_model.predict(pc_features)
+                dota_logits = dota_model.predict(pc_features.mean(0).unsqueeze(0).half())
+                dota_model.fit(pc_features, prob_map)
+                dota_model.update()
+                
 
-            # B. Update Cache (Using Single Cache)
-            add_new_center = update_cache(
-                cache, pred, 
-                [pc_features, loss, prop_entropy, prob_map], 
-                shot_capacity=hp['shot_capacity'], 
-                clip_weights=clip_weights, 
-                beta=hp['beta']
-            )
+                # Combine clip_logits and dota_logits
+                # DOTA's original logic for dota_weights
+                dota_weights_val = torch.clamp(dota_cfg['rho'] * dota_model.c.mean() / pc_features.size(0), max=dota_cfg['eta'])
+                final_logits = clip_logits + dota_weights_val * dota_logits
+            
+            # --- Original Uni-Adapter Cache Logic ---
+            else: # if not args.use_dota
+                # Normalize entropy to [0, 1]
+                prop_entropy = torch.tensor(get_entropy(loss, clip_weights), device=args.device)
 
-            # C. Refinement
-            final_logits = clip_logits.clone() / 100.0
-            prob1 = torch.softmax(final_logits, dim=1)
-            ent1 = softmax_entropy(prob1, False)
-
-            if args.use_new_approximation:
-                final_logits2, new_info = compute_cache_logits(
-                    pc_features, cache, clip_weights, 
-                    [add_new_center, L_reg_old, L_reg_old_inv], 
-                    i, hp
+                # B. Update Cache (Using Single Cache)
+                add_new_center = update_cache(
+                    cache, pred, 
+                    [pc_features, loss, prop_entropy, prob_map], 
+                    shot_capacity=hp['shot_capacity'], 
+                    clip_weights=clip_weights, 
+                    beta=hp['beta']
                 )
-                L_reg_old, L_reg_old_inv = new_info[0], new_info[1]
-            else:
-                final_logits2 = compute_cache_logits_old(
-                    pc_features, cache, clip_weights, hp
-                )
 
-            # D. Combine Logits
-            prob2 = torch.softmax(final_logits2, dim=1)
-            ent2 = softmax_entropy(prob2, False)
-            final_logits = ((1/ent1).reshape(-1,1) * prob1 + (1/ent2).reshape(-1,1) * prob2)
+                # C. Refinement
+                final_logits = clip_logits.clone() / 100.0
+                prob1 = torch.softmax(final_logits, dim=1)
+                ent1 = softmax_entropy(prob1, False)
+
+                if args.use_new_approximation:
+                    final_logits2, new_info = compute_cache_logits(
+                        pc_features, cache, clip_weights, 
+                        [add_new_center, L_reg_old, L_reg_old_inv], 
+                        i, hp
+                    )
+                    L_reg_old, L_reg_old_inv = new_info[0], new_info[1]
+                else:
+                    final_logits2 = compute_cache_logits_old(
+                        pc_features, cache, clip_weights, hp
+                    )
+
+                # D. Combine Logits
+                prob2 = torch.softmax(final_logits2, dim=1)
+                ent2 = softmax_entropy(prob2, False)
+                final_logits = ((1/ent1).reshape(-1,1) * prob1 + (1/ent2).reshape(-1,1) * prob2)
+
 
             end_event.record()
             torch.cuda.synchronize()

@@ -15,6 +15,36 @@ def get_entropy(loss, clip_weights):
     max_entropy = math.log2(clip_weights.size(1))
     return float(loss / max_entropy)
 
+# =========================================================
+# CRITICAL: FAST SOLVER FROM OLD CODE
+# =========================================================
+def conjugate_gradient(A, b, x0=None, M_inv=None, tol=1e-5, max_iter=100):
+    """Conjugate Gradient method to solve A @ x = b."""
+    device = A.device
+    x = x0 if x0 is not None else torch.zeros_like(b)
+    r = b - A @ x
+    z = r.clone() # No preconditioner used in Set A
+    p = z.clone()
+    rz_old = torch.sum(r * z, dim=0)
+    
+    for _ in range(max_iter):
+        Ap = A @ p
+        alpha = rz_old / (torch.sum(p * Ap, dim=0) + 1e-8)
+        alpha = alpha.view(1, -1)
+        x = x + alpha * p
+        r = r - alpha * Ap
+        z = r.clone()
+        rz_new = torch.sum(r * z, dim=0)
+        if torch.all(rz_new < tol):
+            break
+        beta = rz_new / (rz_old + 1e-8)
+        beta = beta.view(1, -1)
+        p = z + beta * p
+        rz_old = rz_new
+    
+    return x
+
+
 def online_value_refinement_new(cache_keys, all_probs, add_new_center, L_reg_old, L_reg_old_inv, iteration, threshold=0.5, lambda_reg=0.13, k=2):
     device = cache_keys.device
     normalized_keys = F.normalize(cache_keys, p=2, dim=1)
@@ -28,31 +58,38 @@ def online_value_refinement_new(cache_keys, all_probs, add_new_center, L_reg_old
     L_reg = L_norm + 2 * lambda_reg * I
     L_reg = L_reg.float()
 
-    if add_new_center == True: 
-        L_inv = torch.linalg.inv(L_reg)
-    elif add_new_center == False:
-        # Recursive inverse update approximation
-        delta_L = L_reg - L_reg_old
+    # if add_new_center == True: 
+    #     L_inv = torch.linalg.inv(L_reg)
+    # elif add_new_center == False:
+    #     # Recursive inverse update approximation
+    #     delta_L = L_reg - L_reg_old
         
-        if issparse(L_reg_old_inv) or issparse(delta_L):
-            L_reg_old_inv = csc_matrix(L_reg_old_inv)
-            delta_L = csc_matrix(delta_L)
+    #     if issparse(L_reg_old_inv) or issparse(delta_L):
+    #         L_reg_old_inv = csc_matrix(L_reg_old_inv)
+    #         delta_L = csc_matrix(delta_L)
 
-        if k == 0:
-            L_reg_new_inv = L_reg_old_inv 
-        elif k == 1:
-            L_reg_new_inv = L_reg_old_inv - L_reg_old_inv @ delta_L @ L_reg_old_inv
-        elif k == 2:
-            term1 = L_reg_old_inv
-            term2 = L_reg_old_inv @ delta_L @ L_reg_old_inv
-            term3 = L_reg_old_inv @ L_reg_old_inv @ delta_L @ L_reg_old_inv @ delta_L
-            L_reg_new_inv = term1 - term2 + term3
+    #     if k == 0:
+    #         L_reg_new_inv = L_reg_old_inv 
+    #     elif k == 1:
+    #         L_reg_new_inv = L_reg_old_inv - L_reg_old_inv @ delta_L @ L_reg_old_inv
+    #     elif k == 2:
+    #         term1 = L_reg_old_inv
+    #         term2 = L_reg_old_inv @ delta_L @ L_reg_old_inv
+    #         term3 = L_reg_old_inv @ L_reg_old_inv @ delta_L @ L_reg_old_inv @ delta_L
+    #         L_reg_new_inv = term1 - term2 + term3
         
-        L_inv = L_reg_new_inv
+    #     L_inv = L_reg_new_inv
 
-    all_probs_new = L_inv @ (2 * lambda_reg * all_probs)
+    # all_probs_new = L_inv @ (2 * lambda_reg * all_probs)
+    # all_probs_new = all_probs_new / all_probs_new.sum(1).unsqueeze(1)
+
+    # return all_probs_new, (L_reg, L_inv)
+
+        # Use Conjugate Gradient (FAST) instead of Matrix Inversion
+    all_probs_new = conjugate_gradient(L_reg, 2 * lambda_reg * all_probs, x0=None)
+    L_inv = 0 # Not calculating inverse to save time, same as original code
+    
     all_probs_new = all_probs_new / all_probs_new.sum(1).unsqueeze(1)
-
     return all_probs_new, (L_reg, L_inv)
 
 def online_value_refinement_old(cache_keys, all_probs, threshold=0.5, lambda_reg=0.13):
