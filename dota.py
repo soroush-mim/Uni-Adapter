@@ -17,7 +17,7 @@ import torch.nn.functional as F
 
 
 class DOTA(nn.Module):
-    def __init__(self, cfg, input_shape, num_classes, clip_weights, streaming_update_Sigma=True):
+    def __init__(self, cfg, input_shape, num_classes, clip_weights, streaming_update_Sigma=True, prior_pre_steps=None):
         super(DOTA, self).__init__()
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.input_shape = input_shape
@@ -29,11 +29,21 @@ class DOTA(nn.Module):
         self.Sigma = cfg['sigma'] * torch.eye(input_shape, dtype=torch.float32).repeat(num_classes, 1, 1).to(self.device)
         self.overall_Sigma = torch.mean(self.Sigma, dim=0)
         self.Lambda = torch.pinverse(self.overall_Sigma.double()).to(self.device).half()
+        if prior_pre_steps is not None:
+            self.prior_pre_steps = prior_pre_steps
+            self.update_prior = True
+            self.cum_soft_labels = torch.zeros((1,num_classes) , dtype=torch.float32).to(self.device)
+            self.prior_step = 0
+        else:
+            self.update_prior = False
 
     # Update the covariance and the mean for the corresponding category
     def fit(self, x, y):
         x = x.to(self.device)
         y = y.to(self.device)  # y is now a probability distribution (soft labels)
+        if self.update_prior:
+            self.cum_soft_labels = self.cum_soft_labels + y
+            self.prior_step = self.prior_step + 1
         with torch.no_grad():
             sum_weights = torch.sum(y, dim=0)  
             weighted_x = torch.matmul(y.T, x)  
@@ -67,29 +77,12 @@ class DOTA(nn.Module):
             W = torch.matmul(Lambda, M)  
             c = 0.5 * torch.sum(M * W, dim=0)
             scores = torch.matmul(X, W) - c
+            
+            if self.update_prior:
+                prior = self.cum_soft_labels + (self.prior_pre_steps/self.num_classes)
+                prior = prior / (self.prior_pre_steps + self.prior_step)
+                scores = scores + torch.log(prior + 1e-10)
+                # scores = scores + 4*torch.log(prior + 1e-10)
+            
             return scores
-
-
-# def run_test_dota(params, loader, clip_model, clip_weights, dota_model, logger):
-#     recent_sample_count = 1000
-#     fusion_accuracies = []
-#     # It is used to store the maximum value of each sample feature and sort it to determine whether it is a sample with high uncertainty
-#     # Initialize the unconfident detector, gamma is the proportion of the true label obtained
-#     with torch.no_grad():
-#         for i, (images, target) in enumerate(tqdm(loader, desc='Processed test images: ')):
-#              # When data augmentation is used, the top 10% of enhanced images are selected to train the model
-#             image_features, clip_logits, loss, prob_map, pred = get_clip_logits_aug(images, clip_model, clip_weights)
-#             pred, target, prop_entropy = torch.tensor(pred).cuda(), target.cuda(), get_entropy(loss, clip_weights)
-#             dota_logits = dota_model.predict(image_features.mean(0).unsqueeze(0))
-
-#             # Choose a smaller weight, so that model relies more on the original clip initially
-#             dota_weights = torch.clamp(params['rho'] * dota_model.c.mean() / image_features.size(0), max=params['eta'])   
-#             # Clip and Dota prediction weights are added to form the final prediction
-#             final_logits = clip_logits + dota_weights*dota_logits
-
-#             dota_model.fit(image_features, prob_map)
-
-#             # Update the inverse matrix
-#             dota_model.update()                
-
 

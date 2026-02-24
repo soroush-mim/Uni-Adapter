@@ -93,12 +93,16 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--distributed', action='store_true')
 
-        # DOTA Specifics
-    parser.add_argument('--use-dota', action='store_true', help='Enable DOTA test-time adaptation.')
+    # DOTA and mode DOTA Specifics. epsilon, sigma, eta, rho are common between 2 methods
+    parser.add_argument('--use-dota', action='store_true', help='Enable DOTA test-time adaptation.', default=True)
     parser.add_argument('--dota-epsilon', type=float, default=0.0001, help='DOTA hyperparameter epsilon (for covariance regularization).')
-    parser.add_argument('--dota-sigma', type=float, default=0.002, help='DOTA hyperparameter sigma (for initial covariance).')
-    parser.add_argument('--dota-eta', type=float, default=0.3, help='DOTA hyperparameter eta (for fusion weight scaling).')
+    parser.add_argument('--dota-sigma', type=float, default=0.0001, help='DOTA hyperparameter sigma (for initial covariance).')
+    parser.add_argument('--dota-eta', type=float, default=0.1, help='DOTA hyperparameter eta (for fusion weight scaling).')
     parser.add_argument('--dota-rho', type=float, default=0.02, help='DOTA hyperparameter rho (for fusion weight initial value).')
+    parser.add_argument('--dota-prior_pre_steps', type=int, default=None, help='number of steps that we assume we have seen uniform prior befor testting starts.')
+    
+    parser.add_argument('--use-mode-dota', action='store_true', help='Enable mode-DOTA test-time adaptation.')
+    parser.add_argument('--mode-M', type=int, default=4, help='Number of modes per class.')
 
     args = parser.parse_args()
     return args

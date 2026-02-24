@@ -1,3 +1,4 @@
+from this import d
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -13,6 +14,8 @@ import utils.math_utils as math_utils
 from visualize.visualization import visualize_pointclouds_plotly
 
 from dota import DOTA
+from dota_mixture import DOTA_mix
+
 
 # Use math logic directly
 def softmax_entropy(x, enable_softmax=True, temperature=1.0):
@@ -51,7 +54,7 @@ def get_logits_wrapper(args, model, feature, clip_weights):
     if args.vlm3d == 'uni3d':
         pc_features = model.encode_pc(feature)
         pc_features = pc_features / pc_features.norm(dim=-1, keepdim=True)
-        logits = 100. * pc_features @ clip_weights
+        logits = 40. * pc_features @ clip_weights ##### should 40 multiplier be applied to other models logits?
     elif args.vlm3d == 'ulip':
         xyz = feature[:, :, :3]
         pc_features = model(xyz)
@@ -194,15 +197,19 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
 
     model.eval()
     
-        # DOTA Configuration
-    if args.use_dota:
+    # DOTA/MODE-DOTA Configuration
+    if args.use_dota or args.use_mode_dota:
         dota_cfg = {
             'epsilon': args.dota_epsilon,
             'sigma': args.dota_sigma,
             'eta': args.dota_eta,
             'rho': args.dota_rho
         }
+    if args.use_dota:
         logging.info(f"DOTA Hyperparameters: {dota_cfg}")
+    if args.use_mode_dota:
+        logging.info(f"MODE DOTA Hyperparameters: {dota_cfg}")
+        logging.info(f"num MODES for MODE DOTA: {args.mode_M}")
 
     with torch.no_grad():
         logging.info('=> Encoding text anchors')
@@ -227,22 +234,30 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
 
         text_features = text_features.to(args.device)
         
-        # Determine input_shape for DOTA: embedding dimension of pc_features
-        # This can be obtained from the model or determined after the first forward pass.
-        # For now, let's assume it matches the text_features embedding dimension.
-        input_shape_for_dota = text_features.shape[1] if args.vlm3d == 'uni3d' else text_features.shape[0] # clip_weights.shape[0]
+        
+        input_shape_for_adaptation_models = text_features.shape[1] if args.vlm3d == 'uni3d' else text_features.shape[0]
+        # num_classes_for_adaptation_models is derived from text_features, which is reliable.
+        num_classes_for_adaptation_models = text_features.shape[0] if args.vlm3d == 'uni3d' else text_features.shape[1] # clip_weights.shape[1]
 
         # Initialize DOTA model if enabled
         dota_model = None
-        if args.use_dota:
-            num_classes_for_dota = text_features.shape[0] if args.vlm3d == 'uni3d' else text_features.shape[1] # clip_weights.shape[1]
-            tensor_matrix = torch.full((input_shape_for_dota, num_classes_for_dota), 0.001) ## WHY?
-            dota_model = DOTA(dota_cfg, input_shape_for_dota, num_classes_for_dota, tensor_matrix)
+        # Initialize GMM-DOTA model if enabled
+        mode_dota_model = None
+
+        if args.use_dota and not args.use_mode_dota: # Only DOTA is enabled
+            tensor_matrix = torch.full((input_shape_for_adaptation_models, num_classes_for_adaptation_models), 0.001)
+            dota_model = DOTA(dota_cfg, input_shape_for_adaptation_models, num_classes_for_adaptation_models, tensor_matrix)
             dota_model.eval() # DOTA is used during inference/TTA, not trained in a traditional sense.
+            logging.info("Initialized DOTA model.")
+
+        elif args.use_mode_dota:
+            mode_dota_model = DOTA_mix(dota_cfg, input_shape_for_adaptation_models, num_classes_for_adaptation_models, text_features.T, num_modes=args.mode_M)
+            mode_dota_model.eval()
+            logging.info(f"Initialized MODE-DOTA model with M={args.mode_M}.")
 
 
-        # --- Uni-Adapter Cache Initialization (Only if DOTA is not used) ---
-        if not args.use_dota:
+        # --- Uni-Adapter Cache Initialization (Only if DOTA/GMM-DOTA are not used) ---
+        if not args.use_dota and not args.use_mode_dota:
             cache = {} 
             L_reg_old = 0 
             L_reg_old_inv = 0
@@ -281,21 +296,88 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
             pc_features, clip_logits, loss, prob_map, pred = get_logits_wrapper(args, model, feature, clip_weights)
             
             # --- DOTA Logic ---
-            if args.use_dota and dota_model is not None:
-                # DOTA expects pc_features, prob_map as its input to fit
-                # dota_logits = dota_model.predict(pc_features)
+            if args.use_dota and not args.use_mode_dota and dota_model is not None:
                 dota_logits = dota_model.predict(pc_features.mean(0).unsqueeze(0).half())
                 dota_model.fit(pc_features, prob_map)
                 dota_model.update()
+
+            elif args.use_mode_dota and mode_dota_model is not None:
+
+                dota_logits = mode_dota_model.predict(pc_features.mean(0).unsqueeze(0).half())
+                mode_dota_model.fit(pc_features, prob_map)
+
+                # Augment point cloud by adding Gaussian noise, then get its feature
+                noise_std = 0.05  # Standard deviation for augmentation, can adjust as needed
+                pc_aug = pc + noise_std * torch.randn_like(pc)
+                feature_aug = torch.cat((pc_aug, rgb), dim=-1)
+                
+                pc_features_aug, _, _, prob_map_aug, _ = get_logits_wrapper(args, model, feature_aug, clip_weights)
+
+                pc_features_interpolated = (0.5*pc_features + 0.5*pc_features_aug) 
+                # #normalize the pc_features_interpolated
+                pc_features_interpolated = pc_features_interpolated / pc_features_interpolated.norm(dim=-1, keepdim=True)
+                pc_features_aug = pc_features_aug / pc_features_aug.norm(dim=-1, keepdim=True)
+                mode_dota_model.fit(pc_features_aug, prob_map)
+                mode_dota_model.fit(pc_features_interpolated, prob_map)
+
+
+                # mode_dota_model.fit(pc_features_aug2, prob_map)
+                # prop_entropy = torch.tensor(get_entropy(loss, clip_weights), device=args.device)
+                # dota_beta = 20.0 # args.dota_beta
+                # confidence_weight = torch.exp(-dota_beta * prop_entropy).unsqueeze(1)
+                # weighted_prob_map = prob_map * confidence_weight
+                # mode_dota_model.fit(pc_features, weighted_prob_map)
+
+                mode_dota_model.update()
                 
 
                 # Combine clip_logits and dota_logits
                 # DOTA's original logic for dota_weights
-                dota_weights_val = torch.clamp(dota_cfg['rho'] * dota_model.c.mean() / pc_features.size(0), max=dota_cfg['eta'])
-                final_logits = clip_logits + dota_weights_val * dota_logits
-            
+                dota_weights_val = torch.clamp(dota_cfg['rho'] * mode_dota_model.c.mean() / pc_features.size(0), max=dota_cfg['eta'])
+                # dota_weights_val = torch.clamp(dota_cfg['rho'] * mode_dota_model.c.mean() / pc_features.size(0), max=1e10)
+                # dota_weights_val = dota_cfg['rho']
+                # prior = torch.log(((mode_dota_model.c.sum(dim=1))/mode_dota_model.c.sum()))
+                # final_logits = clip_logits + dota_weights_val * dota_logits
+                dota_logits = dota_weights_val * (dota_logits) 
+                # dota_logits = dota_logits-dota_logits.min()
+                # rescale the dota_logits to have the same min and max as clip_logits
+                # dota_logits_min = dota_logits.min()
+                # dota_logits_max = dota_logits.max()
+                # clip_logits_min = clip_logits.min()
+                # clip_logits_max = clip_logits.max()
+                # dota_logits = (dota_logits - dota_logits_min) / (dota_logits_max - dota_logits_min) * (clip_logits_max - clip_logits_min) + clip_logits_min
+               # combine weighted by inverse of entropy
+                entropy_clip = softmax_entropy(clip_logits)
+                entropy_dota = softmax_entropy(dota_logits)
+                weight_clip = 1/(entropy_clip+1e-3)
+                weight_dota = 1/(entropy_dota+1e-3)
+                weight_clip = weight_clip/(weight_clip+weight_dota)
+                weight_dota = weight_dota/(weight_clip+weight_dota)
+                # print("entropy_clip", entropy_clip)
+                # print("entropy_dota", entropy_dota)
+                # print("....................................")
+                # final_logits = (1/(entropy_clip+1e-3)) * clip_logits + (1/(entropy_dota+1e-3)) * dota_logits
+                final_logits = weight_clip * clip_logits + weight_dota * dota_logits
+                # final_logits = (1-(0.1*dota_weights_val/0.1))*clip_logits + (0.9*dota_weights_val/0.1)*dota_logits
+                # import matplotlib.pyplot as plt
+                # plt.close()
+                # plt.plot(clip_logits.cpu().numpy()[0], label='clip_logits')
+                # plt.plot(dota_logits.cpu().numpy()[0], label='dota_logits')
+                # plt.legend()
+                # plt.savefig('dota_logits.png')
+                # plt.close()
+                # import time
+                # time.sleep(1)
+                # clip_prob = clip_logits.softmax(1).cpu().numpy()
+                # dota_prob = (dota_weights_val *dota_logits).softmax(1).cpu().numpy()
+                # clip_logits_norm = (clip_logits - clip_logits.min()) / (clip_logits.max() - clip_logits.min())
+                # dota_logits_norm = (dota_logits - dota_logits.min()) / (dota_logits.max() - dota_logits.min())
+                # final_logits = clip_logits_norm + dota_logits_norm
+                # print(prob_map.max())
+               
+
             # --- Original Uni-Adapter Cache Logic ---
-            else: # if not args.use_dota
+            elif not args.use_dota and not args.use_gmm_dota: # if neither DOTA nor GMM-DOTA are used
                 # Normalize entropy to [0, 1]
                 prop_entropy = torch.tensor(get_entropy(loss, clip_weights), device=args.device)
 
