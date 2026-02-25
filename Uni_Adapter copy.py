@@ -188,86 +188,6 @@ def compute_cache_logits_old(pc_features, cache, clip_weights, hp):
     cache_logits = affinity.to(dtype=cache_values.dtype) @ cache_values 
     return cache_logits
 
-def compute_text_alignment_loss(class_embeddings, mode_dota_model):
-    """
-    Compute alignment loss for text features with respect to the learned distribution.
-    
-    This function computes the same values as calling mode_dota_model.predict() for each
-    class embedding individually. The computation is vectorized for efficiency.
-    
-    Args:
-        class_embeddings: (K, D) - class embeddings (each row is a class embedding)
-        mode_dota_model: DOTA_mix model
-    
-    Returns:
-        loss: scalar tensor - mean(off_diagonal) - mean(diagonal) of likelihood matrix
-        likelihood_matrix: (K, K) - likelihood of each class embedding for each class
-                          likelihood_matrix[i, k] = log P(class_embedding_i | class=k)
-                          This matches mode_dota_model.predict(class_embeddings[i:i+1])[0, k]
-    """
-    K, D = class_embeddings.shape
-    
-    # Ensure class_embeddings requires gradients (it should come from text_residuals)
-    if not class_embeddings.requires_grad:
-        raise RuntimeError("class_embeddings must require gradients for optimization")
-    
-    # Use the model's _log_likelihood method directly to ensure consistency
-    # This method handles all the broadcasting correctly
-    # When called with x: (K, D), it returns (K, K, M) where:
-    # log_lik[i, k, m] = log P(class_embedding_i | class=k, mode=m)
-    # Ensure model parameters are on the same device as class_embeddings
-    current_var = mode_dota_model._get_var()  # (K, M, D)
-    mu = mode_dota_model.mu  # (K, M, D)
-    
-    # Ensure device and dtype compatibility (model params don't need gradients, but operations must be differentiable)
-    if current_var.device != class_embeddings.device:
-        current_var = current_var.to(class_embeddings.device)
-    if mu.device != class_embeddings.device:
-        mu = mu.to(class_embeddings.device)
-    
-    log_lik = mode_dota_model._log_likelihood(class_embeddings, mu, current_var)  # (K, K, M)
-    
-    # Add mixture weights: log pi_{k,m}
-    # This matches the computation in mode_dota_model.predict()
-    pi = mode_dota_model.pi  # (K, M)
-    if pi.device != class_embeddings.device:
-        pi = pi.to(class_embeddings.device)
-    log_pi = torch.log(pi + 1e-10).unsqueeze(0)  # (1, K, M)
-    log_joint = log_pi + log_lik  # (K, K, M)
-    
-    # Log-sum-exp over modes: log P(x_i | y=k) for each input embedding i and class k
-    # This is equivalent to: logsumexp_m [log pi_{k,m} + log P(x_i | class=k, mode=m)]
-    log_class_lik = torch.logsumexp(log_joint, dim=2)  # (K, K)
-    
-    # likelihood_matrix[i, k] = log P(class_embedding_i | class=k)
-    # This should match: mode_dota_model.predict(class_embeddings[i:i+1])[0, k]
-    likelihood_matrix = log_class_lik  # (K, K) - row i is likelihoods for class embedding i
-    
-    # Compute diagonal and off-diagonal means
-    likelihood_matrix_normalized = (likelihood_matrix/likelihood_matrix.max())
-    exp_p_likelihood = torch.exp(torch.exp(likelihood_matrix_normalized))
-    exp_p_likelihood_diagonal = torch.diag(exp_p_likelihood)
-    sum1 = exp_p_likelihood.sum(dim=1)
-    sum2 = exp_p_likelihood.sum(dim=0)
-    loss1 = -(exp_p_likelihood_diagonal/sum1).mean() - (exp_p_likelihood_diagonal/sum2).mean()
-    diagonal_elements = torch.diag(likelihood_matrix)  # (K,)
-    # sum1=likelihood_matrix.sum(dim=1)
-    # sum2=likelihood_matrix.sum(dim=0)
-    # loss1 = -(diagonal_elements/sum1).mean() - (diagonal_elements/sum2).mean()
-    
-    diagonal_mean = diagonal_elements.mean()
-    
-    # # Off-diagonal elements: all elements except diagonal
-    # off_diagonal_mask = ~torch.eye(K, dtype=torch.bool, device=likelihood_matrix.device)
-    # off_diagonal_elements = likelihood_matrix[off_diagonal_mask]  # (K*(K-1),)
-    # off_diagonal_mean = off_diagonal_elements.mean()
-    
-    # # Loss: we want to minimize (off_diagonal_mean - diagonal_mean)
-    # # This means we want diagonal to be high and off-diagonal to be low
-    # loss = off_diagonal_mean / diagonal_mean
-    
-    return loss1, likelihood_matrix
-
 def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model, tokenizer, args, hp):
     batch_time = AverageMeter('Time', ':6.3f')
     top1 = AverageMeter('Acc@1', ':6.2f') 
@@ -331,26 +251,9 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
             logging.info("Initialized DOTA model.")
 
         elif args.use_mode_dota:
-            # Keep initial text embedding fixed; only residuals are optimized
-            text_features_initial = text_features.clone().detach()
-            mode_dota_model = DOTA_mix(dota_cfg, input_shape_for_adaptation_models, num_classes_for_adaptation_models, text_features_initial.T, num_modes=args.mode_M)
+            mode_dota_model = DOTA_mix(dota_cfg, input_shape_for_adaptation_models, num_classes_for_adaptation_models, text_features.T, num_modes=args.mode_M)
             mode_dota_model.eval()
             logging.info(f"Initialized MODE-DOTA model with M={args.mode_M}.")
-
-            if args.res_learning:
-            
-                # Initialize residuals for text feature optimization (optimized continuously)
-                # Residuals shape matches text_features_initial: (K, D) for uni3d e.g. (40, 1024), (K, D) for others
-                if args.vlm3d == 'uni3d':
-                    text_residuals = torch.zeros_like(text_features_initial, requires_grad=True, device=args.device)
-                else:
-                    text_residuals = torch.zeros_like(text_features_initial, requires_grad=True, device=args.device)
-                
-                residual_lr_start = 0.001
-                residual_lr_end = 0.001
-                residual_optimizer = torch.optim.Adam([text_residuals], lr=residual_lr_start)
-                num_batches = len(test_loader)
-                logging.info(f"Initialized text feature residuals (lr {residual_lr_start} -> {residual_lr_end} over {num_batches} batches).")
 
 
         # --- Uni-Adapter Cache Initialization (Only if DOTA/GMM-DOTA are not used) ---
@@ -383,22 +286,10 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
             target = target.to(device=args.device, non_blocking=True)
             feature = torch.cat((pc, rgb), dim=-1)
 
-            # For MODE-DOTA use normalized(initial + residuals) for every CLIP logit; otherwise use fixed text features
-            if args.use_mode_dota and mode_dota_model is not None and args.res_learning:
-                text_current = text_features_initial + text_residuals.detach()
-                if args.vlm3d == 'uni3d':
-                    # uni3d: text_current (K, D) = (num_classes, 1024), normalize per row
-                    text_current = F.normalize(text_current, dim=1)
-                    clip_weights = text_current.float().t()  # (D, K) for pc_features @ clip_weights
-                else:
-                    text_current = F.normalize(text_current, dim=1)  # (K, D) per-row
-                    clip_weights = text_current.float()
+            if args.vlm3d == 'uni3d':
+                clip_weights = text_features.float().t()
             else:
-                if args.vlm3d == 'uni3d':
-                    clip_weights = text_features.float().t()
-                else:
-                    clip_weights = text_features.float()
-            if args.vlm3d != 'uni3d':
+                clip_weights = text_features.float()
                 model = model.float()
 
             # A. Get Base Logits
@@ -438,51 +329,6 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
                 # mode_dota_model.fit(pc_features, weighted_prob_map)
 
                 mode_dota_model.update()
-                
-                # Optimize text feature residuals continuously; text embedding stays fixed to initial value
-                if i > 0 and args.res_learning:  # Optimize after first batch (when model has some data)
-                    # Linearly increase lr from residual_lr_start to residual_lr_end over batches
-                    lr_progress = (i - 1) / max(1, num_batches - 1)
-                    new_lr = residual_lr_start + (residual_lr_end - residual_lr_start) * lr_progress
-                    residual_optimizer.param_groups[0]['lr'] = new_lr
-                    with torch.enable_grad():
-                        # Base is always the fixed initial text embedding; only residuals are trained
-                        text_features_modified = text_features_initial + text_residuals
-                        # print(text_residuals)
-                        # Renormalize each class embedding for loss
-                        if args.vlm3d == 'uni3d':
-                            # uni3d: (K, D) e.g. (40, 1024), normalize per row
-                            text_features_modified = text_features_modified / text_features_modified.norm(dim=1, keepdim=True)
-                            class_embeddings = text_features_modified  # (K, D)
-                        else:
-                            text_features_modified = text_features_modified / text_features_modified.norm(dim=1, keepdim=True)  # (K, D) per row
-                            class_embeddings = text_features_modified  # (K, D)
-
-                        alignment_loss, likelihood_matrix = compute_text_alignment_loss(
-                            class_embeddings, mode_dota_model
-                        )
-
-                        # multiple backpropagation steps
-                        for _ in range(10):
-                            residual_optimizer.zero_grad()
-                            alignment_loss.backward()
-                            residual_optimizer.step()
-                            text_features_modified = text_features_initial + text_residuals
-                            text_features_modified = text_features_modified / text_features_modified.norm(dim=1, keepdim=True)
-                            class_embeddings = text_features_modified  # (K, D)
-                            alignment_loss, likelihood_matrix = compute_text_alignment_loss(
-                                class_embeddings, mode_dota_model
-                            )
-                        # residual_optimizer.zero_grad()
-                        # alignment_loss.backward()
-                        # residual_optimizer.step()
-
-                    # Log alignment loss periodically
-                    if i % (args.print_freq) == 0:
-                        diag_mean = torch.diag(likelihood_matrix).mean().item()
-                        off_diag_mean = (likelihood_matrix.sum() - torch.diag(likelihood_matrix).sum()).item() / (likelihood_matrix.numel() - likelihood_matrix.shape[0])
-                        logging.info(f"Batch {i}: Alignment loss = {alignment_loss.item():.4f}, "
-                                   f"Diag mean = {diag_mean:.4f}, Off-diag mean = {off_diag_mean:.4f}")
                 
 
                 # Combine clip_logits and dota_logits
