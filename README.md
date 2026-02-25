@@ -35,18 +35,6 @@ python main_test-time.py --use-dota \
 
 ```
 
-### Parameters
-
-- `--video`: Path to input video file (required)
-- `--ckpt`: Path to StreamVGGT checkpoint (default: automatic download from HuggingFace)
-- `--out_dir`: Output directory for results (default: "output_streamvggt")
-- `--fps_interval`: Extract 1 frame every N seconds (default: 2.5)
-- `--conf_thres`: Confidence threshold for 3D visualization (default: 3.0)
-- `--show_cam`: Show camera poses in 3D visualization
-- `--mask_black_bg`: Mask black background pixels
-- `--mask_white_bg`: Mask white background pixels  
-- `--mask_sky`: Apply sky segmentation mask
-
 
 ### Pre-trained Weights
 
