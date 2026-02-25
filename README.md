@@ -1,49 +1,51 @@
 # Uni-Adapter
 This repository is the official implementation of the AAAI 2026 paper ["Adapt-As-You-Walk Through the Clouds: Training-Free Online Test-Time Adaptation of 3D Vision-Language Foundation Models"](http://arxiv.org/link).
 
-🚧 **Code Release Notice**
-
-The code and pretrained checkpoints are currently being prepared for public release.  
-Please stay tuned — the full implementation will be made available **soon**.
 
 
-## Overview
 
-3D Vision-Language Foundation Models (VLFMs) have shown strong generalization and zero-shot recognition capabilities in open-world point cloud processing tasks. However, these models often underperform in practical scenarios where data are noisy, incomplete, or drawn from a different distribution than the training data. To address this, we propose **Uni-Adapter**, a novel training-free online test-time adaptation (TTA) strategy for 3D VLFMs based on dynamic prototype learning. We define a 3D cache to store class-specific cluster centers as prototypes, which are continuously updated to capture intra-class variability in heterogeneous data distributions. These dynamic prototypes serve as anchors for cache-based logit computation via similarity scoring. Simultaneously, a graph-based label smoothing module captures inter-prototype similarities to enforce label consistency among similar prototypes. Finally, we unify predictions from the original 3D VLFM and the refined 3D cache using entropy-weighted aggregation for reliable adaptation. Without retraining, Uni-Adapter effectively mitigates distribution shifts, achieving state-of-the-art performance on diverse 3D benchmarks over different 3D VLFMs—improving ModelNet-40C by 10.55%, ScanObjectNN-C by 8.26%, and ShapeNet-C by 4.49% over the source 3D VLFMs.
+## Evaluation
 
-## Motivation
-
-Existing test-time adaptation methods either depend on computationally expensive parameter updates or rely on high-confidence samples that fail to capture the full diversity of 3D structures. To address these limitations, this work introduces a training-free, prototype-based adaptation framework designed to enhance reliability and stability under challenging and heterogeneous test conditions.
-
-## Environment
-
-
-### Package Setup
-* Ubuntu 23.10
-* Python 3.8.16
-* PyTorch 1.12.0
-* CUDA 11.6
-* torchvision 0.13.0
-
+### MODE-DOTA(ours)
 ```sh
-# NOTE: Option 1 is recommended. A complete package list is available in `env.yaml`.
-
-# Option 1: Manually create a Conda virtual environment
-conda create -n uniadapter python=3.8.16
-conda activate uniadapter
-
-# Install PyTorch
-pip install torch==1.12.0+cu116 torchvision==0.13.0+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
-
-# Install Dassl
-git clone https://github.com/...
-cd dassl/
-python setup.py develop  # No need to rebuild if the source code is modified.
-
-# Option 2: Create the Conda environment from the provided env.yaml
-conda env create -f env.yaml
+python main_test-time.py --use-mode-dota --mode-M 8 --res-learning \ #mode dota parameters
+   --dota-sigma 0.0001 --dota-eta 0.1 --dota-rho 0.02  # same as dota parameters
 
 ```
+### Parameters
+
+- `--use-mode-dota`: Enable MODE-DOTA test-time adaptation. (OURS)
+- `--mode-M`: Number of modes per class for MODE DOTA.
+- `--res-learning`: Enable residual learning for MODE DOTA
+- `--dota-epsilon`: DOTA & MODE DOTA hyperparameter epsilon (for covariance regularization). -> same for dota and mode dota(ours)
+- `--dota-sigma`: DOTA & MODE DOTA hyperparameter sigma (for initial covariance). -> same for dota and mode dota(ours)
+- `--dota-eta`: DOTA & MODE DOTA hyperparameter eta (for fusion weight scaling). -> same for dota and mode dota(ours)
+- `--dota-rho`: DOTA & MODE DOTA hyperparameter rho (for fusion weight initial value). -> same for dota and mode dota(ours)
+- `--use-dota`: Enable DOTA test-time adaptation.
+
+
+
+
+### DOTA
+
+```sh
+python main_test-time.py --use-dota \
+   --dota-sigma 0.0001 --dota-eta 0.1 --dota-rho 0.02
+
+
+```
+
+### Parameters
+
+- `--video`: Path to input video file (required)
+- `--ckpt`: Path to StreamVGGT checkpoint (default: automatic download from HuggingFace)
+- `--out_dir`: Output directory for results (default: "output_streamvggt")
+- `--fps_interval`: Extract 1 frame every N seconds (default: 2.5)
+- `--conf_thres`: Confidence threshold for 3D visualization (default: 3.0)
+- `--show_cam`: Show camera poses in 3D visualization
+- `--mask_black_bg`: Mask black background pixels
+- `--mask_white_bg`: Mask white background pixels  
+- `--mask_sky`: Apply sky segmentation mask
 
 
 ### Pre-trained Weights
