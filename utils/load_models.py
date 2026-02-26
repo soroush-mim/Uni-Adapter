@@ -40,12 +40,12 @@ def load_vlm_model(args):
 
 def _load_uni3d(args):
     # Load CLIP
-    # clip_model, _, _ = open_clip.create_model_and_transforms(
-    #     model_name=args.clip_uni3d_model, 
-    #     pretrained=args.clip_uvi3d_path
-    # )
-    # clip_model.to(args.device)
-    clip_model = []
+    clip_model, _, _ = open_clip.create_model_and_transforms(
+        model_name=args.clip_uni3d_model, 
+        pretrained=args.clip_uvi3d_path
+    )
+    clip_model.to(args.device)
+    # clip_model = []
 
     # Load Uni3D
     model = getattr(uni3d_models, args.model)(args=args)

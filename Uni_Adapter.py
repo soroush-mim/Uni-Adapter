@@ -1,4 +1,4 @@
-from this import d
+# from this import d
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -54,7 +54,7 @@ def get_logits_wrapper(args, model, feature, clip_weights):
     if args.vlm3d == 'uni3d':
         pc_features = model.encode_pc(feature)
         pc_features = pc_features / pc_features.norm(dim=-1, keepdim=True)
-        logits = 40. * pc_features @ clip_weights ##### should 40 multiplier be applied to other models logits?
+        logits = 100. * pc_features @ clip_weights ##### should 40 multiplier be applied to other models logits?
     elif args.vlm3d == 'ulip':
         xyz = feature[:, :, :3]
         pc_features = model(xyz)
@@ -243,6 +243,7 @@ def compute_text_alignment_loss(class_embeddings, mode_dota_model):
     # This should match: mode_dota_model.predict(class_embeddings[i:i+1])[0, k]
     likelihood_matrix = log_class_lik  # (K, K) - row i is likelihoods for class embedding i
     
+
     # Compute diagonal and off-diagonal means
     likelihood_matrix_normalized = (likelihood_matrix/likelihood_matrix.max())
     exp_p_likelihood = torch.exp(torch.exp(likelihood_matrix_normalized))
@@ -309,7 +310,7 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
                 labels = json.load(f)[validate_dataset_name]
                 
             logging.info("Computing text features on the fly...")
-            text_features = clip_classifier(args, labels, templates, clip_model)
+            text_features = clip_classifier(args, labels, templates, clip_model).T
             # torch.save(text_features.cpu(), args.precomputed_text_features)
 
         text_features = text_features.to(args.device)
@@ -490,9 +491,12 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
                 dota_weights_val = torch.clamp(dota_cfg['rho'] * mode_dota_model.c.mean() / pc_features.size(0), max=dota_cfg['eta'])
                 # dota_weights_val = torch.clamp(dota_cfg['rho'] * mode_dota_model.c.mean() / pc_features.size(0), max=1e10)
                 # dota_weights_val = dota_cfg['rho']
+                #...............................................................
+                # add prior to dota_logits
                 # prior = torch.log(((mode_dota_model.c.sum(dim=1))/mode_dota_model.c.sum()))
-                # final_logits = clip_logits + dota_weights_val * dota_logits
+                # dota_logits = dota_weights_val * (dota_logits) + prior
                 dota_logits = dota_weights_val * (dota_logits) 
+                #...............................................................
                 # dota_logits = dota_logits-dota_logits.min()
                 # rescale the dota_logits to have the same min and max as clip_logits
                 # dota_logits_min = dota_logits.min()
@@ -507,6 +511,9 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
                 weight_dota = 1/(entropy_dota+1e-3)
                 weight_clip = weight_clip/(weight_clip+weight_dota)
                 weight_dota = weight_dota/(weight_clip+weight_dota)
+                # print("weight_clip", weight_clip)
+                # print("weight_dota", weight_dota)
+                # print("....................................")
                 # print("entropy_clip", entropy_clip)
                 # print("entropy_dota", entropy_dota)
                 # print("....................................")

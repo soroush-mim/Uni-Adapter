@@ -27,7 +27,8 @@ def parse_args():
     parser.add_argument('--drop-path-rate', default=0.0, type=float)
 
     # Uni3D Specifics
-    parser.add_argument('--precomputed-text-features', type=str, default=r"/home/ai-research/soroush/Uni-Adapter/precomputed_text_features/Uni3D/text_features_large.pt", help="Path to Uni3D checkpoint")
+    # parser.add_argument('--precomputed-text-features', type=str, default=r"/home/ai-research/soroush/Uni-Adapter/precomputed_text_features/Uni3D/text_features_large.pt", help="Path to Uni3D checkpoint")
+    parser.add_argument('--precomputed-text-features', type=str, default=None, help="Path to Uni3D checkpoint")
 
     parser.add_argument('--clip-uni3d-model', type=str, default="EVA02-E-14-plus", help="CLIP backbone name")
     parser.add_argument('--clip-uvi3d-path', type=str, default=r"/home/ai-research/soroush/model/pretrain/open_clip_pytorch_model.bin", help="CLIP backbone name")
@@ -73,10 +74,14 @@ def parse_args():
 
     # ========================= Data Config =========================
     # Dataset Root
-    parser.add_argument('--myroot', type=str, default="/home/ai-research/soroush/dataset/modelnet40_c", help='Root path to specific dataset point clouds')
-    
-    parser.add_argument('--dataset_name', type=str, default='modelnet', help='modelnet, scanobject, shapenetcore')
-    parser.add_argument('--validate_dataset_name', default='modelnet40_openshape', type=str, help="Key in labels.json")
+    # parser.add_argument('--myroot', type=str, default="/home/ai-research/soroush/dataset/modelnet40_c", help='Root path to specific dataset point clouds')
+    # parser.add_argument('--myroot', type=str, default="/home/ai-research/soroush/dataset/scanobjectnn_c", help='Root path to specific dataset point clouds')
+    parser.add_argument('--myroot', type=str, default="/home/ai-research/soroush/dataset/shapenet_c", help='Root path to specific dataset point clouds')
+    parser.add_argument('--dataset_name', type=str, default='shapenetcore', help='modelnet, scanobject, shapenetcore')
+    # parser.add_argument('--validate_dataset_name', default='modelnet40_openshape', type=str, help="Key in labels.json")
+    # parser.add_argument('--validate_dataset_name', default='scanobjnn_openshape', type=str, help="Key in labels.json")
+    parser.add_argument('--validate_dataset_name', default="shapenet_openshape", type=str, help="Key in labels.json")
+
     parser.add_argument('--template_key', default='modelnet40_64', type=str, help="Key in templates.json")
     
     parser.add_argument('--batch-size', type=int, default=1)
@@ -103,7 +108,7 @@ def parse_args():
     
     parser.add_argument('--use-mode-dota', action='store_true', help='Enable mode-DOTA test-time adaptation.', default=True)
     parser.add_argument('--mode-M', type=int, default=4, help='Number of modes per class.')
-    parser.add_argument('--res-learning', action='store_true', help='Enable Optimizing text feature residuals continuously.')
+    parser.add_argument('--res-learning', action='store_true', help='Enable Optimizing text feature residuals continuously.', default=True)
 
 
     parser.add_argument('--use-adaptive-dota', action='store_true', help='Enable adaptive-DOTA test-time adaptation.')
